@@ -1,0 +1,10 @@
+#PYTHON2 ?= $(shell pwd)/../../../venv2.7/bin/python
+ESPIDF ?= $(shell pwd)/../../../esp-idf/
+BOARD ?= GENERIC_SPIRAM
+PORT ?= /dev/cu.SLAB_USBtoUART
+FLASH_MODE ?= dio
+FLASH_SIZE ?= 4MB
+BAUD ?= 115200
+
+include Makefile
+
