@@ -519,7 +519,9 @@ class MQTTClient(MQTT_base):
             await self._connect(clean)
         except Exception:
             self.close()
-            raise
+            await asyncio.sleep(300)
+            await self.connect()
+            return
         self.rcv_pids.clear()
         # If we get here without error broker/LAN must be up.
         self._isconnected = True
