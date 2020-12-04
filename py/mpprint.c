@@ -542,7 +542,7 @@ int mp_vprintf(const mp_print_t *print, const char *fmt, va_list args) {
             case 'g':
             case 'G': {
                 #if ((MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_FLOAT) || (MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE))
-                mp_float_t f = va_arg(args, double);
+                mp_float_t f = (mp_float_t)va_arg(args, double);
                 chrs += mp_print_float(print, f, *fmt, flags, fill, width, prec);
                 #else
                 #error Unknown MICROPY FLOAT IMPL
@@ -557,11 +557,9 @@ int mp_vprintf(const mp_print_t *print, const char *fmt, va_list args) {
             case 'l': {
                 unsigned long long int arg_value = va_arg(args, unsigned long long int);
                 ++fmt;
-                if (*fmt == 'u' || *fmt == 'd') {
-                    chrs += mp_print_int(print, arg_value, *fmt == 'd', 10, 'a', flags, fill, width);
-                    break;
-                }
-                assert(!"unsupported fmt char");
+                assert(*fmt == 'u' || *fmt == 'd' || !"unsupported fmt char");
+                chrs += mp_print_int(print, arg_value, *fmt == 'd', 10, 'a', flags, fill, width);
+                break;
             }
             #endif
             default:

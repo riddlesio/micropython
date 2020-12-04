@@ -72,7 +72,7 @@ $ cd ports/esp32
 $ python3 -m venv build-venv
 $ source build-venv/bin/activate
 $ pip install --upgrade pip
-$ pip install path/to/esp-idf/requirements.txt
+$ pip install -r path/to/esp-idf/requirements.txt
 ```
 
 To re-enter this virtual environment in future sessions, you only need to
@@ -128,9 +128,9 @@ the toolchain.
 
 You can follow the 3.x guide at:
 
-  * [Linux installation](https://docs.espressif.com/projects/esp-idf/en/v3.3.1/get-started/linux-setup.html)
-  * [MacOS installation](https://docs.espressif.com/projects/esp-idf/en/v3.3.1/get-started/macos-setup.html)
-  * [Windows installation](https://docs.espressif.com/projects/esp-idf/en/v3.3.1/get-started/windows-setup.html)
+  * [Linux installation](https://docs.espressif.com/projects/esp-idf/en/v3.3.2/get-started/linux-setup.html)
+  * [MacOS installation](https://docs.espressif.com/projects/esp-idf/en/v3.3.2/get-started/macos-setup.html)
+  * [Windows installation](https://docs.espressif.com/projects/esp-idf/en/v3.3.2/get-started/windows-setup.html)
 
 You will need to update your `PATH` environment variable to include the ESP32
 toolchain. For example, you can issue the following commands on (at least)

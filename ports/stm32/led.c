@@ -141,9 +141,11 @@ STATIC void led_pwm_init(int led) {
         case 2:
             __TIM2_CLK_ENABLE();
             break;
+        #if defined(TIM3)
         case 3:
             __TIM3_CLK_ENABLE();
             break;
+        #endif
         default:
             assert(0);
     }
@@ -194,7 +196,7 @@ void led_state(pyb_led_t led, int state) {
     }
 
     const pin_obj_t *led_pin = pyb_led_obj[led - 1].led_pin;
-    //printf("led_state(%d,%d)\n", led, state);
+    // printf("led_state(%d,%d)\n", led, state);
     if (state == 0) {
         // turn LED off
         MICROPY_HW_LED_OFF(led_pin);
@@ -304,7 +306,7 @@ STATIC mp_obj_t led_obj_make_new(const mp_obj_type_t *type, size_t n_args, size_
 
     // check led number
     if (!(1 <= led_id && led_id <= NUM_LEDS)) {
-        mp_raise_msg_varg(&mp_type_ValueError, "LED(%d) doesn't exist", led_id);
+        mp_raise_msg_varg(&mp_type_ValueError, MP_ERROR_TEXT("LED(%d) doesn't exist"), led_id);
     }
 
     // return static led object

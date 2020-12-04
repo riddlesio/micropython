@@ -23,6 +23,10 @@ class TimeoutError(Exception):
     pass
 
 
+# Used when calling Loop.call_exception_handler
+_exc_context = {"message": "Task exception wasn't retrieved", "exception": None, "future": None}
+
+
 ################################################################################
 # Sleep functions
 
@@ -49,7 +53,7 @@ class SingletonGenerator:
 # Use a SingletonGenerator to do it without allocating on the heap
 def sleep_ms(t, sgen=SingletonGenerator()):
     assert sgen.state is None
-    sgen.state = ticks_add(ticks(), t)
+    sgen.state = ticks_add(ticks(), max(0, t))
     return sgen
 
 
@@ -128,13 +132,6 @@ class IOQueue:
 ################################################################################
 # Main run loop
 
-# TaskQueue of Task instances
-_task_queue = TaskQueue()
-
-# Task queue and poller for stream IO
-_io_queue = IOQueue()
-
-
 # Ensure the awaitable is a task
 def _promote_to_task(aw):
     return aw if isinstance(aw, Task) else create_task(aw)
@@ -188,8 +185,6 @@ def run_until_complete(main_task=None):
                 if isinstance(er, StopIteration):
                     return er.value
                 raise er
-            # Save return value of coro to pass up to caller
-            t.data = er
             # Schedule any other tasks waiting on the completion of this task
             waiting = False
             if hasattr(t, "waiting"):
@@ -197,12 +192,15 @@ def run_until_complete(main_task=None):
                     _task_queue.push_head(t.waiting.pop_head())
                     waiting = True
                 t.waiting = None  # Free waiting queue head
-            # Print out exception for detached tasks
             if not waiting and not isinstance(er, excs_stop):
-                print("task raised exception:", t.coro)
-                sys.print_exception(er)
-            # Indicate task is done
-            t.coro = None
+                # An exception ended this detached task, so queue it for later
+                # execution to handle the uncaught exception if no other task retrieves
+                # the exception in the meantime (this is handled by Task.throw).
+                _task_queue.push_head(t)
+            # Indicate task is done by setting coro to the task object itself
+            t.coro = t
+            # Save return value of coro to pass up to caller
+            t.data = er
 
 
 # Create a new task from a coroutine and run it until it finishes
@@ -222,6 +220,8 @@ _stop_task = None
 
 
 class Loop:
+    _exc_handler = None
+
     def create_task(coro):
         return create_task(coro)
 
@@ -244,7 +244,34 @@ class Loop:
     def close():
         pass
 
+    def set_exception_handler(handler):
+        Loop._exc_handler = handler
+
+    def get_exception_handler():
+        return Loop._exc_handler
+
+    def default_exception_handler(loop, context):
+        print(context["message"])
+        print("future:", context["future"], "coro=", context["future"].coro)
+        sys.print_exception(context["exception"])
+
+    def call_exception_handler(context):
+        (Loop._exc_handler or Loop.default_exception_handler)(Loop, context)
+
 
 # The runq_len and waitq_len arguments are for legacy uasyncio compatibility
 def get_event_loop(runq_len=0, waitq_len=0):
     return Loop
+
+
+def new_event_loop():
+    global _task_queue, _io_queue
+    # TaskQueue of Task instances
+    _task_queue = TaskQueue()
+    # Task queue and poller for stream IO
+    _io_queue = IOQueue()
+    return Loop
+
+
+# Initialise default event loop
+new_event_loop()

@@ -298,7 +298,8 @@ STATIC void gc_sweep(void) {
                 #if MICROPY_PY_GC_COLLECT_RETVAL
                 MP_STATE_MEM(gc_collected)++;
                 #endif
-            // fall through to free the head
+                // fall through to free the head
+                MP_FALLTHROUGH
 
             case AT_TAIL:
                 if (free_tail) {
@@ -834,7 +835,7 @@ void gc_dump_alloc_table(void) {
             }
             // print header for new line of blocks
             // (the cast to uint32_t is for 16-bit ports)
-            //mp_printf(&mp_plat_print, "\n%05x: ", (uint)(PTR_FROM_BLOCK(bl) & (uint32_t)0xfffff));
+            // mp_printf(&mp_plat_print, "\n%05x: ", (uint)(PTR_FROM_BLOCK(bl) & (uint32_t)0xfffff));
             mp_printf(&mp_plat_print, "\n%05x: ", (uint)((bl * BYTES_PER_BLOCK) & (uint32_t)0xfffff));
         }
         int c = ' ';
@@ -956,7 +957,7 @@ void gc_test(void) {
         mp_uint_t *p = gc_alloc(i, false);
         printf("p=%p\n", p);
         if (i & 3) {
-            //ptrs[i] = p;
+            // ptrs[i] = p;
         }
     }
 

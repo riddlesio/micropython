@@ -135,7 +135,7 @@ size_t mp_binary_get_size(char struct_type, char val_type, size_t *palign) {
     }
 
     if (size == 0) {
-        mp_raise_ValueError("bad typecode");
+        mp_raise_ValueError(MP_ERROR_TEXT("bad typecode"));
     }
 
     if (palign != NULL) {
@@ -176,9 +176,9 @@ mp_obj_t mp_binary_get_val_array(char typecode, void *p, size_t index) {
         #endif
         #if MICROPY_PY_BUILTINS_FLOAT
         case 'f':
-            return mp_obj_new_float((mp_float_t)((float *)p)[index]);
+            return mp_obj_new_float_from_f(((float *)p)[index]);
         case 'd':
-            return mp_obj_new_float((mp_float_t)((double *)p)[index]);
+            return mp_obj_new_float_from_d(((double *)p)[index]);
         #endif
         // Extension to CPython: array of objects
         case 'O':
@@ -244,12 +244,12 @@ mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte *
         union { uint32_t i;
                 float f;
         } fpu = {val};
-        return mp_obj_new_float((mp_float_t)fpu.f);
+        return mp_obj_new_float_from_f(fpu.f);
     } else if (val_type == 'd') {
         union { uint64_t i;
                 double f;
         } fpu = {val};
-        return mp_obj_new_float((mp_float_t)fpu.f);
+        return mp_obj_new_float_from_d(fpu.f);
     #endif
     } else if (is_signed(val_type)) {
         if ((long long)MP_SMALL_INT_MIN <= val && val <= (long long)MP_SMALL_INT_MAX) {
@@ -311,7 +311,7 @@ void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte *p
             union { uint32_t i;
                     float f;
             } fp_sp;
-            fp_sp.f = mp_obj_get_float(val_in);
+            fp_sp.f = mp_obj_get_float_to_f(val_in);
             val = fp_sp.i;
             break;
         }
@@ -320,7 +320,7 @@ void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte *p
                     uint32_t i32[2];
                     double f;
             } fp_dp;
-            fp_dp.f = mp_obj_get_float(val_in);
+            fp_dp.f = mp_obj_get_float_to_d(val_in);
             if (BYTES_PER_WORD == 8) {
                 val = fp_dp.i64;
             } else {
@@ -343,7 +343,7 @@ void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte *p
             val = mp_obj_get_int(val_in);
             // zero/sign extend if needed
             if (BYTES_PER_WORD < 8 && size > sizeof(val)) {
-                int c = (is_signed(val_type) && (mp_int_t)val < 0) ? 0xff : 0x00;
+                int c = (mp_int_t)val < 0 ? 0xff : 0x00;
                 memset(p, c, size);
                 if (struct_type == '>') {
                     p += size - sizeof(val);
@@ -359,10 +359,10 @@ void mp_binary_set_val_array(char typecode, void *p, size_t index, mp_obj_t val_
     switch (typecode) {
         #if MICROPY_PY_BUILTINS_FLOAT
         case 'f':
-            ((float *)p)[index] = mp_obj_get_float(val_in);
+            ((float *)p)[index] = mp_obj_get_float_to_f(val_in);
             break;
         case 'd':
-            ((double *)p)[index] = mp_obj_get_float(val_in);
+            ((double *)p)[index] = mp_obj_get_float_to_d(val_in);
             break;
         #endif
         // Extension to CPython: array of objects
@@ -419,10 +419,10 @@ void mp_binary_set_val_array_from_int(char typecode, void *p, size_t index, mp_i
         #endif
         #if MICROPY_PY_BUILTINS_FLOAT
         case 'f':
-            ((float *)p)[index] = val;
+            ((float *)p)[index] = (float)val;
             break;
         case 'd':
-            ((double *)p)[index] = val;
+            ((double *)p)[index] = (double)val;
             break;
         #endif
         // Extension to CPython: array of pointers

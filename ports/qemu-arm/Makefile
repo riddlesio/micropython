@@ -4,6 +4,9 @@ include ../../py/mkenv.mk
 # qstr definitions (must come before including py.mk)
 QSTR_DEFS = qstrdefsport.h
 
+# MicroPython feature configurations
+MICROPY_ROM_TEXT_COMPRESSION ?= 1
+
 # include py core make definitions
 include $(TOP)/py/py.mk
 
@@ -37,12 +40,13 @@ INC += -I.
 INC += -I$(TOP)
 INC += -I$(BUILD)
 
-CFLAGS += $(INC) -Wall -Wpointer-arith -Werror -std=gnu99 $(COPT) \
+CFLAGS += $(INC) -Wall -Wpointer-arith -Wdouble-promotion -Wfloat-conversion -Werror -std=gnu99 $(COPT) \
 	 -ffunction-sections -fdata-sections
+CFLAGS += $(CFLAGS_EXTRA)
 
-#Debugging/Optimization
+# Debugging/Optimization
 ifeq ($(DEBUG), 1)
-CFLAGS += -g -DPENDSV_DEBUG
+CFLAGS += -g
 COPT = -O0
 else
 COPT += -Os -DNDEBUG
@@ -91,6 +95,7 @@ LIB_SRC_C += $(addprefix lib/,\
 	libm/atanf.c \
 	libm/atan2f.c \
 	libm/roundf.c \
+	utils/gchelper_native.c \
 	utils/sys_stdio_mphal.c \
 	)
 

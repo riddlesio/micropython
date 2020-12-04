@@ -150,7 +150,7 @@ STATIC item_t keyCodeMap[] = {
     {VK_HOME, "[H"},
     {VK_END, "[F"},
     {VK_DELETE, "[3~"},
-    {0, ""} //sentinel
+    {0, ""} // sentinel
 };
 
 // likewise, but with Ctrl key down
@@ -159,7 +159,7 @@ STATIC item_t ctrlKeyCodeMap[] = {
     {VK_RIGHT, "f"},
     {VK_DELETE, "d"},
     {VK_BACK, "\x7F"},
-    {0, ""} //sentinel
+    {0, ""} // sentinel
 };
 
 STATIC const char *cur_esc_seq = NULL;
@@ -254,4 +254,16 @@ mp_uint_t mp_hal_ticks_cpu(void) {
     #else
     return value.LowPart;
     #endif
+}
+
+uint64_t mp_hal_time_ns(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000000000ULL + (uint64_t)tv.tv_usec * 1000ULL;
+}
+
+// TODO: POSIX et al. define usleep() as guaranteedly capable only of 1s sleep:
+// "The useconds argument shall be less than one million."
+void mp_hal_delay_ms(mp_uint_t ms) {
+    usleep((ms) * 1000);
 }

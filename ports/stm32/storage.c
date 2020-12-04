@@ -42,7 +42,7 @@
 #define STORAGE_IDLE_TICK(tick) (((tick) & ~(SYSTICK_DISPATCH_NUM_SLOTS - 1) & STORAGE_SYSTICK_MASK) == 0)
 
 #if defined(MICROPY_HW_BDEV2_IOCTL)
-#define FLASH_PART2_START_BLOCK (FLASH_PART1_START_BLOCK + MICROPY_HW_BDEV2_IOCTL(BDEV_IOCTL_NUM_BLOCKS, 0))
+#define FLASH_PART2_START_BLOCK (FLASH_PART1_START_BLOCK + MICROPY_HW_BDEV_IOCTL(BDEV_IOCTL_NUM_BLOCKS, 0))
 #endif
 
 static bool storage_is_initialised = false;
@@ -140,7 +140,7 @@ static void build_partition(uint8_t *buf, int boot, int type, uint32_t start_blo
 }
 
 bool storage_read_block(uint8_t *dest, uint32_t block) {
-    //printf("RD %u\n", block);
+    // printf("RD %u\n", block);
     if (block == 0) {
         // fake the MBR so we can decide on our own partition table
 
@@ -172,7 +172,7 @@ bool storage_read_block(uint8_t *dest, uint32_t block) {
 }
 
 bool storage_write_block(const uint8_t *src, uint32_t block) {
-    //printf("WR %u\n", block);
+    // printf("WR %u\n", block);
     if (block == 0) {
         // can't write MBR, but pretend we did
         return true;
@@ -453,7 +453,9 @@ void pyb_flash_init_vfs(fs_user_mount_t *vfs) {
     vfs->base.type = &mp_fat_vfs_type;
     vfs->blockdev.flags |= MP_BLOCKDEV_FLAG_NATIVE | MP_BLOCKDEV_FLAG_HAVE_IOCTL;
     vfs->fatfs.drv = vfs;
+    #if MICROPY_FATFS_MULTI_PARTITION
     vfs->fatfs.part = 1; // flash filesystem lives on first partition
+    #endif
     vfs->blockdev.readblocks[0] = MP_OBJ_FROM_PTR(&pyb_flash_readblocks_obj);
     vfs->blockdev.readblocks[1] = MP_OBJ_FROM_PTR(&pyb_flash_obj);
     vfs->blockdev.readblocks[2] = MP_OBJ_FROM_PTR(storage_read_blocks); // native version

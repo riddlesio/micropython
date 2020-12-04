@@ -14,9 +14,15 @@ include ../../py/mkenv.mk
 -include mpconfigport.mk
 include $(BOARD_DIR)/mpconfigboard.mk
 
+# Files that are generated and needed before the QSTR build.
+QSTR_GENERATED_HEADERS = $(BUILD)/pins_qstr.h $(BUILD)/modstm_qstr.h
+
 # qstr definitions (must come before including py.mk)
-QSTR_DEFS = qstrdefsport.h $(BUILD)/pins_qstr.h $(BUILD)/modstm_qstr.h
-QSTR_GLOBAL_DEPENDENCIES = mpconfigboard_common.h $(BOARD_DIR)/mpconfigboard.h
+QSTR_DEFS = qstrdefsport.h $(QSTR_GENERATED_HEADERS)
+QSTR_GLOBAL_DEPENDENCIES = mpconfigboard_common.h $(BOARD_DIR)/mpconfigboard.h $(QSTR_GENERATED_HEADERS)
+
+# MicroPython feature configurations
+MICROPY_ROM_TEXT_COMPRESSION ?= 1
 
 # File containing description of content to be frozen into firmware.
 FROZEN_MANIFEST ?= boards/manifest.py
@@ -39,7 +45,8 @@ DFU=$(TOP)/tools/dfu.py
 USE_PYDFU ?= 1
 PYDFU ?= $(TOP)/tools/pydfu.py
 DFU_UTIL ?= dfu-util
-DEVICE=0483:df11
+BOOTLOADER_DFU_USB_VID ?= 0x0483
+BOOTLOADER_DFU_USB_PID ?= 0xDF11
 STFLASH ?= st-flash
 OPENOCD ?= openocd
 OPENOCD_CONFIG ?= boards/openocd_stm32f4.cfg
@@ -87,7 +94,7 @@ CFLAGS_MCU_l4 = $(CFLAGS_CORTEX_M) -mtune=cortex-m4 -mcpu=cortex-m4
 CFLAGS_MCU_h7 = $(CFLAGS_CORTEX_M) -mtune=cortex-m7 -mcpu=cortex-m7
 CFLAGS_MCU_wb = $(CFLAGS_CORTEX_M) -mtune=cortex-m4 -mcpu=cortex-m4
 
-CFLAGS += $(INC) -Wall -Wpointer-arith -Werror -std=gnu99 -nostdlib $(CFLAGS_MOD) $(CFLAGS_EXTRA)
+CFLAGS += $(INC) -Wall -Wpointer-arith -Werror -Wdouble-promotion -Wfloat-conversion -std=gnu99 -nostdlib $(CFLAGS_MOD) $(CFLAGS_EXTRA)
 CFLAGS += -D$(CMSIS_MCU)
 CFLAGS += $(CFLAGS_MCU_$(MCU_SERIES))
 CFLAGS += $(COPT)
@@ -111,13 +118,13 @@ ifeq ($(MICROPY_FLOAT_IMPL),none)
 CFLAGS += -DMICROPY_FLOAT_IMPL=MICROPY_FLOAT_IMPL_NONE
 else
 CFLAGS += -DMICROPY_FLOAT_IMPL=MICROPY_FLOAT_IMPL_FLOAT
-CFLAGS += -fsingle-precision-constant -Wdouble-promotion
+CFLAGS += -fsingle-precision-constant
 endif
 endif
 
 LDFLAGS = -nostdlib -L $(LD_DIR) $(addprefix -T,$(LD_FILES)) -Map=$(@:.elf=.map) --cref
 LDFLAGS += --defsym=_estack_reserve=8
-LIBS = $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
+LIBS = "$(shell $(CC) $(CFLAGS) -print-libgcc-file-name)"
 
 # Remove uncalled code from the final image.
 CFLAGS += -fdata-sections -ffunction-sections
@@ -131,16 +138,24 @@ else
 COPT += -Os -DNDEBUG
 endif
 
+# Flags for optional C++ source code
+CXXFLAGS += $(filter-out -Wmissing-prototypes -Wold-style-definition -std=gnu99,$(CFLAGS))
+CXXFLAGS += $(CXXFLAGS_MOD)
+ifneq ($(SRC_CXX)$(SRC_MOD_CXX),)
+LDFLAGS += -L$(dir $(shell $(CXX) $(CXXFLAGS) -print-file-name=libstdc++.a))
+endif
+
 # Options for mpy-cross
 MPY_CROSS_FLAGS += -march=armv7m
 
-SRC_LIB = $(addprefix lib/,\
+LIB_SRC_C += $(addprefix lib/,\
 	libc/string0.c \
 	mp-readline/readline.c \
 	netutils/netutils.c \
 	netutils/trace.c \
 	netutils/dhcpserver.c \
 	timeutils/timeutils.c \
+	utils/gchelper_native.c \
 	utils/pyexec.c \
 	utils/interrupt_char.c \
 	utils/sys_stdio_mphal.c \
@@ -148,7 +163,7 @@ SRC_LIB = $(addprefix lib/,\
 	)
 
 ifeq ($(MICROPY_FLOAT_IMPL),double)
-SRC_LIBM = $(addprefix lib/libm_dbl/,\
+LIBM_SRC_C += $(addprefix lib/libm_dbl/,\
 	__cos.c \
 	__expo2.c \
 	__fpclassify.c \
@@ -183,6 +198,7 @@ SRC_LIBM = $(addprefix lib/libm_dbl/,\
 	nearbyint.c \
 	pow.c \
 	rint.c \
+	round.c \
 	scalbn.c \
 	sin.c \
 	sinh.c \
@@ -192,12 +208,12 @@ SRC_LIBM = $(addprefix lib/libm_dbl/,\
 	trunc.c \
 	)
 ifeq ($(SUPPORTS_HARDWARE_FP_DOUBLE),1)
-SRC_LIBM += lib/libm_dbl/thumb_vfp_sqrt.c
+LIBM_SRC_C += lib/libm_dbl/thumb_vfp_sqrt.c
 else
-SRC_LIBM += lib/libm_dbl/sqrt.c
+LIBM_SRC_C += lib/libm_dbl/sqrt.c
 endif
 else
-SRC_LIBM = $(addprefix lib/libm/,\
+LIBM_SRC_C += $(addprefix lib/libm/,\
 	math.c \
 	acoshf.c \
 	asinfacosf.c \
@@ -226,24 +242,32 @@ SRC_LIBM = $(addprefix lib/libm/,\
 	wf_tgamma.c \
 	)
 ifeq ($(SUPPORTS_HARDWARE_FP_SINGLE),1)
-SRC_LIBM += lib/libm/thumb_vfp_sqrtf.c
+LIBM_SRC_C += lib/libm/thumb_vfp_sqrtf.c
 else
-SRC_LIBM += lib/libm/ef_sqrt.c
+LIBM_SRC_C += lib/libm/ef_sqrt.c
 endif
 endif
 
-EXTMOD_SRC_C = $(addprefix extmod/,\
+LIBM_O = $(addprefix $(BUILD)/, $(LIBM_SRC_C:.c=.o))
+
+# Too many warnings in libm_dbl, disable for now.
+ifeq ($(MICROPY_FLOAT_IMPL),double)
+$(LIBM_O): CFLAGS := $(filter-out -Wdouble-promotion -Wfloat-conversion, $(CFLAGS))
+endif
+
+EXTMOD_SRC_C += $(addprefix extmod/,\
 	modonewire.c \
         )
 
-DRIVERS_SRC_C = $(addprefix drivers/,\
+DRIVERS_SRC_C += $(addprefix drivers/,\
 	bus/softspi.c \
 	bus/softqspi.c \
 	memory/spiflash.c \
 	dht/dht.c \
 	)
 
-SRC_C = \
+SRC_C += \
+	boardctrl.c \
 	main.c \
 	stm32_it.c \
 	usbd_conf.c \
@@ -314,7 +338,10 @@ SRC_C = \
 	adc.c \
 	$(wildcard $(BOARD_DIR)/*.c)
 
-SRC_O = \
+SRC_CXX += \
+	$(SRC_MOD_CXX)
+
+SRC_O += \
 	$(STARTUP_FILE) \
 	$(SYSTEM_FILE)
 
@@ -336,7 +363,7 @@ SRC_O += \
 endif
 endif
 
-SRC_HAL = $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
+HAL_SRC_C += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
 	hal.c \
 	hal_adc.c \
 	hal_adc_ex.c \
@@ -361,13 +388,13 @@ SRC_HAL = $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
 	)
 
 ifeq ($(MCU_SERIES),$(filter $(MCU_SERIES),f4 f7 h7 l0 l4 wb))
-SRC_HAL += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
+HAL_SRC_C += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
 	ll_usb.c \
 	)
 endif
 
 ifeq ($(MCU_SERIES),$(filter $(MCU_SERIES),f4 f7 h7 l4))
-SRC_HAL += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
+HAL_SRC_C += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
 	hal_sd.c \
 	ll_sdmmc.c \
 	ll_fmc.c \
@@ -375,7 +402,7 @@ SRC_HAL += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
 endif
 
 ifeq ($(MCU_SERIES),$(filter $(MCU_SERIES),f4 f7 h7))
-SRC_HAL += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
+HAL_SRC_C += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
 	hal_mmc.c \
 	hal_sdram.c \
 	hal_dma_ex.c \
@@ -384,14 +411,14 @@ SRC_HAL += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_,\
 endif
 
 ifeq ($(CMSIS_MCU),$(filter $(CMSIS_MCU),STM32H743xx))
-    SRC_HAL += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_, hal_fdcan.c)
+    HAL_SRC_C += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_, hal_fdcan.c)
 else
 ifeq ($(MCU_SERIES),$(filter $(MCU_SERIES),f0 f4 f7 h7 l4))
-    SRC_HAL += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_, hal_can.c)
+    HAL_SRC_C += $(addprefix $(HAL_DIR)/Src/stm32$(MCU_SERIES)xx_, hal_can.c)
 endif
 endif
 
-SRC_USBDEV = $(addprefix $(USBDEV_DIR)/,\
+USBDEV_SRC_C += $(addprefix $(USBDEV_DIR)/,\
 	core/src/usbd_core.c \
 	core/src/usbd_ctlreq.c \
 	core/src/usbd_ioreq.c \
@@ -403,7 +430,6 @@ SRC_USBDEV = $(addprefix $(USBDEV_DIR)/,\
 ifeq ($(MICROPY_PY_BLUETOOTH),1)
 CFLAGS_MOD += -DMICROPY_PY_BLUETOOTH=1
 CFLAGS_MOD += -DMICROPY_PY_BLUETOOTH_ENABLE_CENTRAL_MODE=1
-CFLAGS_MOD += -DMICROPY_PY_BLUETOOTH_GATTS_ON_READ_CALLBACK=1
 endif
 
 ifeq ($(MICROPY_PY_NETWORK_CYW43),1)
@@ -457,11 +483,14 @@ endif
 ifeq ($(MICROPY_SSL_MBEDTLS),1)
 CFLAGS_MOD += -DMBEDTLS_CONFIG_FILE='"mbedtls/mbedtls_config.h"'
 SRC_MOD += mbedtls/mbedtls_port.c
+# replace mbedtls' error.c by ours
+SRC_MOD := $(filter-out %/mbedtls/library/error.c, $(SRC_MOD))
+LIB_SRC_C += lib/mbedtls_errors/mp_mbedtls_errors.c
 endif
 
 ifeq ($(MICROPY_PY_BLUETOOTH),1)
 
-SRC_C += modbluetooth_hci.c
+SRC_C += mpbthciport.c
 
 ifeq ($(MICROPY_BLUETOOTH_NIMBLE),1)
 ifeq ($(MICROPY_BLUETOOTH_BTSTACK),1)
@@ -470,13 +499,15 @@ endif
 endif
 
 ifeq ($(MICROPY_BLUETOOTH_NIMBLE),1)
+CFLAGS_MOD += -DMICROPY_PY_BLUETOOTH_ENABLE_L2CAP_CHANNELS=1
 include $(TOP)/extmod/nimble/nimble.mk
-SRC_C += nimble.c
+SRC_C += mpnimbleport.c
 endif
 
 ifeq ($(MICROPY_BLUETOOTH_BTSTACK),1)
+MICROPY_BLUETOOTH_BTSTACK_H4 ?= 1
 include $(TOP)/extmod/btstack/btstack.mk
-SRC_C += btstack.c
+SRC_C += mpbtstackport.c
 endif
 
 ifeq ($(MICROPY_PY_NETWORK_CYW43),1)
@@ -485,16 +516,16 @@ endif
 
 endif
 
-OBJ =
 OBJ += $(PY_O)
-OBJ += $(addprefix $(BUILD)/, $(SRC_LIB:.c=.o))
-OBJ += $(addprefix $(BUILD)/, $(SRC_LIBM:.c=.o))
+OBJ += $(addprefix $(BUILD)/, $(LIB_SRC_C:.c=.o))
+OBJ += $(LIBM_O)
 OBJ += $(addprefix $(BUILD)/, $(EXTMOD_SRC_C:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(DRIVERS_SRC_C:.c=.o))
+OBJ += $(addprefix $(BUILD)/, $(HAL_SRC_C:.c=.o))
+OBJ += $(addprefix $(BUILD)/, $(USBDEV_SRC_C:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
+OBJ += $(addprefix $(BUILD)/, $(SRC_CXX:.cpp=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_O))
-OBJ += $(addprefix $(BUILD)/, $(SRC_HAL:.c=.o))
-OBJ += $(addprefix $(BUILD)/, $(SRC_USBDEV:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_MOD:.c=.o))
 OBJ += $(BUILD)/pins_$(BOARD).o
 
@@ -533,15 +564,56 @@ CFLAGS += -DMICROPY_QSTR_EXTRA_POOL=mp_qstr_frozen_const_pool
 CFLAGS += -DMICROPY_MODULE_FROZEN_MPY
 endif
 
-.PHONY: deploy
+define RUN_DFU
+	$(ECHO) "Writing $(1) to the board"
+	$(if $(filter $(USE_PYDFU),1),\
+	$(Q)$(PYTHON) $(PYDFU) --vid $(BOOTLOADER_DFU_USB_VID) --pid $(BOOTLOADER_DFU_USB_PID) -u $(1),
+	$(Q)$(DFU_UTIL) -a 0 -d $(BOOTLOADER_DFU_USB_VID):$(BOOTLOADER_DFU_USB_PID) -D $(1))
+endef
+
+define RUN_STLINK
+	$(ECHO) "Writing $(1) to the board via ST-LINK"
+	$(Q)$(STFLASH) write $(1) $(2)
+endef
+
+define RUN_OPENOCD
+	$(ECHO) "Writing $(1) to the board via ST-LINK using OpenOCD"
+	$(Q)$(OPENOCD) -f $(OPENOCD_CONFIG) -c "stm_flash $(1) $(2) $(3) $(4)"
+endef
+
+define GENERATE_ELF
+	$(ECHO) "LINK $(1)"
+	$(Q)$(LD) $(LDFLAGS) -o $(1) $(2) $(LDFLAGS_MOD) $(LIBS)
+	$(Q)$(SIZE) $(1)
+	$(if $(filter-out $(TEXT0_ADDR),0x08000000), \
+		$(ECHO) "INFO: this build requires mboot to be installed first")
+	$(if $(filter $(TEXT1_ADDR),0x90000000), \
+		$(ECHO) "INFO: this build places firmware in external QSPI flash")
+endef
+
+define GENERATE_BIN
+	$(ECHO) "GEN $(1)"
+	$(Q)$(OBJCOPY) -O binary $(addprefix -j ,$(3)) $(2) $(1)
+endef
+
+define GENERATE_DFU
+	$(ECHO) "GEN $(1)"
+	$(Q)$(PYTHON) $(DFU) \
+	-D $(BOOTLOADER_DFU_USB_VID):$(BOOTLOADER_DFU_USB_PID) \
+	$(if $(2),$(addprefix -b ,$(3):$(2))) \
+	$(if $(4),$(addprefix -b ,$(5):$(4))) \
+	$(1)
+endef
+
+define GENERATE_HEX
+	$(ECHO) "GEN $(1)"
+	$(Q)$(OBJCOPY) -O ihex $(2) $(1)
+endef
+
+.PHONY: deploy deploy-stlink deploy-openocd
 
 deploy: $(BUILD)/firmware.dfu
-	$(ECHO) "Writing $< to the board"
-ifeq ($(USE_PYDFU),1)
-	$(Q)$(PYTHON) $(PYDFU) -u $<
-else
-	$(Q)$(DFU_UTIL) -a 0 -d $(DEVICE) -D $<
-endif
+	$(call RUN_DFU,$^)
 
 # A board should specify TEXT0_ADDR if to use a different location than the
 # default for the firmware memory location.  A board can also optionally define
@@ -553,18 +625,17 @@ ifeq ($(TEXT1_ADDR),)
 
 TEXT0_SECTIONS ?= .isr_vector .text .data
 
-deploy-stlink: $(BUILD)/firmware.dfu
-	$(ECHO) "Writing $(BUILD)/firmware.bin to the board via ST-LINK"
-	$(Q)$(STFLASH) write $(BUILD)/firmware.bin $(TEXT0_ADDR)
+deploy-stlink: $(BUILD)/firmware.bin
+	$(call RUN_STLINK,$^,$(TEXT0_ADDR))
 
-deploy-openocd: $(BUILD)/firmware.dfu
-	$(ECHO) "Writing $(BUILD)/firmware.bin to the board via ST-LINK using OpenOCD"
-	$(Q)$(OPENOCD) -f $(OPENOCD_CONFIG) -c "stm_flash $(BUILD)/firmware.bin $(TEXT0_ADDR)"
+deploy-openocd: $(BUILD)/firmware.bin
+	$(call RUN_OPENOCD,$^,$(TEXT0_ADDR))
 
-$(BUILD)/firmware.dfu: $(BUILD)/firmware.elf
-	$(ECHO) "Create $@"
-	$(Q)$(OBJCOPY) -O binary $(addprefix -j ,$(TEXT0_SECTIONS)) $^ $(BUILD)/firmware.bin
-	$(Q)$(PYTHON) $(DFU) -b $(TEXT0_ADDR):$(BUILD)/firmware.bin $@
+$(BUILD)/firmware.bin: $(BUILD)/firmware.elf
+	$(call GENERATE_BIN,$@,$^,$(TEXT0_SECTIONS))
+
+$(BUILD)/firmware.dfu: $(BUILD)/firmware.bin
+	$(call GENERATE_DFU,$@,$^,$(TEXT0_ADDR))
 
 else
 # TEXT0_ADDR and TEXT1_ADDR are specified so split firmware between these locations
@@ -572,38 +643,28 @@ else
 TEXT0_SECTIONS ?= .isr_vector
 TEXT1_SECTIONS ?= .text .data
 
-deploy-stlink: $(BUILD)/firmware.dfu
-	$(ECHO) "Writing $(BUILD)/firmware0.bin to the board via ST-LINK"
-	$(Q)$(STFLASH) write $(BUILD)/firmware0.bin $(TEXT0_ADDR)
-	$(ECHO) "Writing $(BUILD)/firmware1.bin to the board via ST-LINK"
-	$(Q)$(STFLASH) --reset write $(BUILD)/firmware1.bin $(TEXT1_ADDR)
+deploy-stlink: $(BUILD)/firmware0.bin $(BUILD)/firmware1.bin
+	$(call RUN_STLINK,$(word 1,$^),$(TEXT0_ADDR))
+	$(call RUN_STLINK,$(word 2,$^),$(TEXT1_ADDR))
 
-deploy-openocd: $(BUILD)/firmware.dfu
-	$(ECHO) "Writing $(BUILD)/firmware{0,1}.bin to the board via ST-LINK using OpenOCD"
-	$(Q)$(OPENOCD) -f $(OPENOCD_CONFIG) -c "stm_flash $(BUILD)/firmware0.bin $(TEXT0_ADDR) $(BUILD)/firmware1.bin $(TEXT1_ADDR)"
+deploy-openocd: $(BUILD)/firmware0.bin $(BUILD)/firmware1.bin
+	$(call RUN_OPENOCD,$(word 1,$^),$(TEXT0_ADDR),$(word 2,$^),$(TEXT1_ADDR))
 
-$(BUILD)/firmware.dfu: $(BUILD)/firmware.elf
-	$(ECHO) "GEN $@"
-	$(Q)$(OBJCOPY) -O binary $(addprefix -j ,$(TEXT0_SECTIONS)) $^ $(BUILD)/firmware0.bin
-	$(Q)$(OBJCOPY) -O binary $(addprefix -j ,$(TEXT1_SECTIONS)) $^ $(BUILD)/firmware1.bin
-	$(Q)$(PYTHON) $(DFU) -b $(TEXT0_ADDR):$(BUILD)/firmware0.bin -b $(TEXT1_ADDR):$(BUILD)/firmware1.bin $@
+$(BUILD)/firmware0.bin: $(BUILD)/firmware.elf
+	$(call GENERATE_BIN,$@,$^,$(TEXT0_SECTIONS))
 
+$(BUILD)/firmware1.bin: $(BUILD)/firmware.elf
+	$(call GENERATE_BIN,$@,$^,$(TEXT1_SECTIONS))
+
+$(BUILD)/firmware.dfu: $(BUILD)/firmware0.bin $(BUILD)/firmware1.bin
+	$(call GENERATE_DFU,$@,$(word 1,$^),$(TEXT0_ADDR),$(word 2,$^),$(TEXT1_ADDR))
 endif
 
 $(BUILD)/firmware.hex: $(BUILD)/firmware.elf
-	$(ECHO) "GEN $@"
-	$(Q)$(OBJCOPY) -O ihex $< $@
+	$(call GENERATE_HEX,$@,$^)
 
 $(BUILD)/firmware.elf: $(OBJ)
-	$(ECHO) "LINK $@"
-	$(Q)$(LD) $(LDFLAGS) -o $@ $^ $(LDFLAGS_MOD) $(LIBS)
-	$(Q)$(SIZE) $@
-ifneq ($(TEXT0_ADDR),0x08000000)
-	$(ECHO) "INFO: this build requires mboot to be installed first"
-endif
-ifeq ($(TEXT1_ADDR),0x90000000)
-	$(ECHO) "INFO: this build places firmware in external QSPI flash"
-endif
+	$(call GENERATE_ELF,$@,$^)
 
 PLLVALUES = boards/pllvalues.py
 MAKE_PINS = boards/make-pins.py
@@ -625,7 +686,7 @@ GEN_CDCINF_FILE = $(HEADER_BUILD)/pybcdc.inf
 GEN_CDCINF_HEADER = $(HEADER_BUILD)/pybcdc_inf.h
 
 # List of sources for qstr extraction
-SRC_QSTR += $(SRC_C) $(SRC_MOD) $(SRC_LIB) $(EXTMOD_SRC_C)
+SRC_QSTR += $(SRC_C) $(SRC_CXX) $(SRC_MOD) $(LIB_SRC_C) $(EXTMOD_SRC_C)
 # Append any auto-generated sources that are needed by sources listed in
 # SRC_QSTR
 SRC_QSTR_AUTO_DEPS += $(GEN_CDCINF_HEADER)

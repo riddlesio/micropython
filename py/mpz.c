@@ -852,7 +852,7 @@ size_t mpz_set_from_str(mpz_t *z, const char *str, size_t len, bool neg, unsigne
 
     z->len = 0;
     for (; cur < top; ++cur) { // XXX UTF8 next char
-        //mp_uint_t v = char_to_numeric(cur#); // XXX UTF8 get char
+        // mp_uint_t v = char_to_numeric(cur#); // XXX UTF8 get char
         mp_uint_t v = *cur;
         if ('0' <= v && v <= '9') {
             v -= '0';
@@ -1609,7 +1609,6 @@ bool mpz_as_uint_checked(const mpz_t *i, mp_uint_t *value) {
     return true;
 }
 
-// writes at most len bytes to buf (so buf should be zeroed before calling)
 void mpz_as_bytes(const mpz_t *z, bool big_endian, size_t len, byte *buf) {
     byte *b = buf;
     if (big_endian) {
@@ -1641,6 +1640,15 @@ void mpz_as_bytes(const mpz_t *z, bool big_endian, size_t len, byte *buf) {
             }
         }
     }
+
+    // fill remainder of buf with zero/sign extension of the integer
+    if (big_endian) {
+        len = b - buf;
+    } else {
+        len = buf + len - b;
+        buf = b;
+    }
+    memset(buf, z->neg ? 0xff : 0x00, len);
 }
 
 #if MICROPY_PY_BUILTINS_FLOAT

@@ -64,21 +64,21 @@ STATIC machine_hw_spi_obj_t machine_hw_spi_obj[2];
 STATIC void machine_hw_spi_deinit_internal(machine_hw_spi_obj_t *self) {
     switch (spi_bus_remove_device(self->spi)) {
         case ESP_ERR_INVALID_ARG:
-            mp_raise_msg(&mp_type_OSError, "invalid configuration");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("invalid configuration"));
             return;
 
         case ESP_ERR_INVALID_STATE:
-            mp_raise_msg(&mp_type_OSError, "SPI device already freed");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("SPI device already freed"));
             return;
     }
 
     switch (spi_bus_free(self->host)) {
         case ESP_ERR_INVALID_ARG:
-            mp_raise_msg(&mp_type_OSError, "invalid configuration");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("invalid configuration"));
             return;
 
         case ESP_ERR_INVALID_STATE:
-            mp_raise_msg(&mp_type_OSError, "SPI bus already freed");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("SPI bus already freed"));
             return;
     }
 
@@ -159,7 +159,7 @@ STATIC void machine_hw_spi_init_internal(
     }
 
     if (self->host != HSPI_HOST && self->host != VSPI_HOST) {
-        mp_raise_ValueError("SPI ID must be either HSPI(1) or VSPI(2)");
+        mp_raise_ValueError(MP_ERROR_TEXT("SPI ID must be either HSPI(1) or VSPI(2)"));
     }
 
     if (changed) {
@@ -188,7 +188,7 @@ STATIC void machine_hw_spi_init_internal(
         .pre_cb = NULL
     };
 
-    //Initialize the SPI bus
+    // Initialize the SPI bus
 
     // Select DMA channel based on the hardware SPI host
     int dma_chan = 0;
@@ -201,28 +201,28 @@ STATIC void machine_hw_spi_init_internal(
     ret = spi_bus_initialize(self->host, &buscfg, dma_chan);
     switch (ret) {
         case ESP_ERR_INVALID_ARG:
-            mp_raise_msg(&mp_type_OSError, "invalid configuration");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("invalid configuration"));
             return;
 
         case ESP_ERR_INVALID_STATE:
-            mp_raise_msg(&mp_type_OSError, "SPI host already in use");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("SPI host already in use"));
             return;
     }
 
     ret = spi_bus_add_device(self->host, &devcfg, &self->spi);
     switch (ret) {
         case ESP_ERR_INVALID_ARG:
-            mp_raise_msg(&mp_type_OSError, "invalid configuration");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("invalid configuration"));
             spi_bus_free(self->host);
             return;
 
         case ESP_ERR_NO_MEM:
-            mp_raise_msg(&mp_type_OSError, "out of memory");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("out of memory"));
             spi_bus_free(self->host);
             return;
 
         case ESP_ERR_NOT_FOUND:
-            mp_raise_msg(&mp_type_OSError, "no free slots");
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("no free slots"));
             spi_bus_free(self->host);
             return;
     }
@@ -241,7 +241,7 @@ STATIC void machine_hw_spi_transfer(mp_obj_base_t *self_in, size_t len, const ui
     machine_hw_spi_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     if (self->state == MACHINE_HW_SPI_STATE_DEINIT) {
-        mp_raise_msg(&mp_type_OSError, "transfer on deinitialized SPI");
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("transfer on deinitialized SPI"));
         return;
     }
 
@@ -351,6 +351,8 @@ STATIC void machine_hw_spi_init(mp_obj_base_t *self_in, size_t n_args, const mp_
 }
 
 mp_obj_t machine_hw_spi_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+    MP_MACHINE_SPI_CHECK_FOR_LEGACY_SOFTSPI_CONSTRUCTION(n_args, n_kw, all_args);
+
     enum { ARG_id, ARG_baudrate, ARG_polarity, ARG_phase, ARG_bits, ARG_firstbit, ARG_sck, ARG_mosi, ARG_miso };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_id,       MP_ARG_REQUIRED | MP_ARG_INT, {.u_int = -1} },

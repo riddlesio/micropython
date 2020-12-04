@@ -67,11 +67,20 @@ Additional functions
     that *timeout* seconds.  If *awaitable* is not a task then a task will be
     created from it.
 
+    If a timeout occurs, it cancels the task and raises ``asyncio.TimeoutError``:
+    this should be trapped by the caller.
+
     Returns the return value of *awaitable*.
 
     This is a coroutine.
 
-.. function:: gather(\*awaitables, return_exceptions=False)
+.. function:: wait_for_ms(awaitable, timeout)
+
+    Similar to `wait_for` but *timeout* is an integer in milliseconds.
+
+    This is a coroutine, and a MicroPython extension.
+
+.. function:: gather(*awaitables, return_exceptions=False)
 
     Run all *awaitables* concurrently.  Any *awaitables* that are not tasks are
     promoted to tasks.
@@ -241,6 +250,13 @@ Event Loop
 
     Return the event loop used to schedule and run tasks.  See `Loop`.
 
+.. function:: new_event_loop()
+
+    Reset the event loop and return it.
+
+    Note: since MicroPython only has a single event loop this function just
+    resets the loop's state, it does not create a new one.
+
 .. class:: Loop()
 
     This represents the object which schedules and runs tasks.  It cannot be
@@ -266,3 +282,22 @@ Event Loop
 .. method:: Loop.close()
 
     Close the event loop.
+
+.. method:: Loop.set_exception_handler(handler)
+
+    Set the exception handler to call when a Task raises an exception that is not
+    caught.  The *handler* should accept two arguments: ``(loop, context)``.
+
+.. method:: Loop.get_exception_handler()
+
+    Get the current exception handler.  Returns the handler, or ``None`` if no
+    custom handler is set.
+
+.. method:: Loop.default_exception_handler(context)
+
+    The default exception handler that is called.
+
+.. method:: Loop.call_exception_handler(context)
+
+    Call the current exception handler.  The argument *context* is passed through and
+    is a dictionary containing keys: ``'message'``, ``'exception'``, ``'future'``.

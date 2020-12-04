@@ -30,7 +30,7 @@ def fs_corrupted():
     while 1:
         print(
             """\
-The FAT filesystem starting at sector %d with size %d sectors appears to
+The filesystem starting at sector %d with size %d sectors appears to
 be corrupted. If you had important data there, you may want to make a flash
 snapshot to try to recover it. Otherwise, perform factory reprogramming
 of MicroPython firmware (completely erase flash, followed by firmware
@@ -45,8 +45,8 @@ def setup():
     check_bootsec()
     print("Performing initial setup")
     wifi()
-    uos.VfsFat.mkfs(bdev)
-    vfs = uos.VfsFat(bdev)
+    uos.VfsLfs2.mkfs(bdev)
+    vfs = uos.VfsLfs2(bdev)
     uos.mount(vfs, "/")
     with open("boot.py", "w") as f:
         f.write(
